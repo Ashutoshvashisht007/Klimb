@@ -8,11 +8,13 @@ import { fileURLToPath } from 'url';
 
 const app = express();
 app.use(cors());
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 app.use(express.static(path.join(__dirname, "public")));
 
-app.use(express.static(path.join(__dirname, "public")));
 const multerStorage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, "uploads/");
@@ -22,8 +24,6 @@ const multerStorage = multer.diskStorage({
   },
 });
 const upload = multer({ storage: multerStorage });
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
 
 // MongoDB connection
 mongoose.connect('mongodb://0.0.0.0:27017', {
@@ -34,7 +34,7 @@ mongoose.connect('mongodb://0.0.0.0:27017', {
   .catch(err => console.log(err));
 
 app.post("/api/upload", upload.single("file"), (req, res) => {
-  readAndUploadFile(req.file.filename);
+  readAndUploadFile(req,res);
   res.status(200);
   res.send();
 });

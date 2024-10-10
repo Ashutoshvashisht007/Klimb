@@ -1,48 +1,73 @@
-import Data from "../model/candidateModel.js"
-import path from "path";
-import reader from "xlsx";
+import Data from "../model/candidateModel.js";
 import async from "async";
-import fs from "fs";
-import { fileURLToPath } from "url";
+import readXlsxFile from "read-excel-file/node";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+export const checkAndUploadData = async (item, cb) => {
+  try {
+    const query = { Email: item.Email }; 
 
-export const checkAndUploadData = async (name, data) => {
-  function checkEmail(currData) {
-    return currData.Email === data.Email;
+    const existingRecord = await Data.findOne(query);
+
+    if (existingRecord) {
+      console.log(`Duplicate found for email: ${item.Email}, skipping this record.`);
+      return cb(); 
+    } else {
+      const newRecord = new Data({
+        'Name of the Candidate': item['Name of the Candidate'],
+        'Email': item.Email,
+        'Mobile No.': item['Mobile No.'],
+        'Date of Birth': item['Date of Birth'],
+        'Work Experience': item['Work Experience'],
+        'Resume Title': item['Resume Title'],
+        'Current Location': item['Current Location'],
+        'Postal Address': item['Postal Address'],
+        'Current Employer': item['Current Employer'],
+        'Current Designation': item['Current Designation'],
+      });
+
+      await newRecord.save();
+      console.log(`Record for ${item.Email} uploaded successfully.`);
+      return cb(); 
+    }
+  } catch (err) {
+    console.error(`Error processing record for ${item.Email}:`, err);
+    return cb(err); 
   }
-
-  await Data.findOne({ name: name })
-    .then(async (found) => {
-      if (!found) {
-        const newData = new Data({
-          name: name,
-          candidateData: [data],
-        });
-        await newData.save();
-      } else if (!found.candidateData.find(checkEmail)) {
-        found.candidateData.push(data);
-        await found.save();
-      }
-    })
-    .catch((err) => console.log(err));
 };
 
-export const readAndUploadFile = async (filename) => {
-  const filePath = path.join(__dirname, "..", "uploads", filename);
+export const readAndUploadFile = async (req, res) => {
+  try {
+    const rows = await readXlsxFile(req.file.path, { sheet: "Sheet1" });
 
-  const file = reader.readFile(filePath);
-  const datas = reader.utils.sheet_to_json(file.Sheets[file.SheetNames[0]], {
-    raw: false,
-  });
-
-  async.eachSeries(datas, async function (item, cb) {
-    await checkAndUploadData(filename, item);
-  });
-
-  fs.unlink(filePath, (err) => {
-    if (err) console.log(err);
-    else console.log("File Deleted Successfully");
-  });
+    const headers = rows.shift();
+    const data = rows.map(row => {
+      const rowObject = {};
+      headers.forEach((header, index) => {
+        rowObject[header] = row[index];
+      });
+      return rowObject;
+    });
+    
+    console.log(data);
+    
+    async.eachSeries(
+      data,
+      (item, cb) => {
+        checkAndUploadData(item, cb);
+      },
+      function (err) {
+        if (err) {
+          console.error("An error occurred while processing the file:", err);
+          if (!res.headersSent) {
+            return res.status(500).json({ message: "Error processing file" });
+          }
+        }
+      }
+    );
+  } catch (err) {
+    console.error("Error reading file:", err);
+    if (!res.headersSent) {
+      res.status(500).json({ message: "Error reading file" });
+    }
+  }
 };
